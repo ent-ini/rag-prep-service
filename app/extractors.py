@@ -13,6 +13,10 @@ class UnsupportedFileTypeError(ValueError):
     pass
 
 
+PDF_OCR_MIN_TEXT_CHARS = 40
+PDF_OCR_LANGS = "rus+eng"
+
+
 def detect_file_type(path: Path) -> str:
     ext = path.suffix.lower().lstrip(".")
     return ext or "txt"
@@ -62,15 +66,47 @@ def extract_text(stream: BinaryIO, source_name: str, file_type: str, source_path
 def extract_pdf(stream: BinaryIO, source_name: str, file_type: str, source_path: str | None = None) -> NormalizedDocument:
     from pypdf import PdfReader
 
-    reader = PdfReader(stream)
+    pdf_bytes = stream.read()
+    text_reader = PdfReader(io.BytesIO(pdf_bytes))
     blocks: list[ContentBlock] = []
-    for idx, page in enumerate(reader.pages, start=1):
+    total_text_chars = 0
+
+    for idx, page in enumerate(text_reader.pages, start=1):
         text = page.extract_text() or ""
+        total_text_chars += len(text.strip())
         blocks.append(ContentBlock(type="page", text=text, order=idx - 1, metadata={"page": idx}))
+
     metadata: dict[str, Any] = {}
-    if reader.metadata:
-        metadata.update({k.lstrip("/"): v for k, v in reader.metadata.items()})
+    if text_reader.metadata:
+        metadata.update({k.lstrip("/"): v for k, v in text_reader.metadata.items()})
+
+    if total_text_chars >= PDF_OCR_MIN_TEXT_CHARS:
+        return _build_doc(source_name, file_type, blocks, metadata, source_path=source_path)
+
+    ocr_blocks = extract_pdf_ocr(pdf_bytes)
+    if ocr_blocks:
+        metadata["ocr_used"] = True
+        return _build_doc(source_name, file_type, ocr_blocks, metadata, source_path=source_path)
+
     return _build_doc(source_name, file_type, blocks, metadata, source_path=source_path)
+
+
+def extract_pdf_ocr(pdf_bytes: bytes) -> list[ContentBlock]:
+    import fitz
+    import pytesseract
+    from PIL import Image
+
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    blocks: list[ContentBlock] = []
+
+    for idx, page in enumerate(doc, start=1):
+        pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+        image = Image.open(io.BytesIO(pix.tobytes("png")))
+        text = pytesseract.image_to_string(image, lang=PDF_OCR_LANGS) or ""
+        blocks.append(ContentBlock(type="page", text=text, order=idx - 1, metadata={"page": idx, "ocr": True}))
+
+    doc.close()
+    return blocks
 
 
 def extract_docx(stream: BinaryIO, source_name: str, file_type: str, source_path: str | None = None) -> NormalizedDocument:
