@@ -1,0 +1,9 @@
+[project]
+name = "rag-prep-service"
+version = "0.1.0"
+description = "Normalize documents for RAG ingestion"
+readme = "README.md"
+requires-python = ">=3.10"
+
+[tool.ruff]
+line-length = 100
