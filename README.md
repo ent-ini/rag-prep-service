@@ -50,7 +50,7 @@ CLI тоже сохраняет результат как `.md`.
 ## Формат ответа
 - HTTP body: markdown text
 - `Content-Type: text/markdown; charset=utf-8`
-- `Content-Disposition: attachment; filename="<original-name>.md"`
+- без `Content-Disposition` и без имени файла в response
 
 ## Заметки
 - Для сканов PDF нужен отдельный OCR.
